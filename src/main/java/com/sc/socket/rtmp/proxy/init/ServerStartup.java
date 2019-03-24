@@ -2,7 +2,9 @@ package com.sc.socket.rtmp.proxy.init;
 
 import com.sc.socket.rtmp.proxy.config.ProxyLocalConfig;
 import com.sc.socket.rtmp.proxy.config.ProxyRemoteConfig;
+import com.sc.socket.rtmp.proxy.config.ProxyServerConfig;
 import com.sc.socket.rtmp.proxy.server.RtmpSocketServer;
+import com.sc.socket.rtmp.proxy.service.RedisService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,7 +38,13 @@ public class ServerStartup implements ApplicationListener<ApplicationReadyEvent>
     private ProxyLocalConfig proxyLocalConfig;
 
     @Autowired
+    private ProxyServerConfig proxyServerConfig;
+
+    @Autowired
     private ProxyRemoteConfig proxyRemoteConfig;
+
+    @Autowired
+    private RedisService redisService;
 
     /**
      * Spring Done Start Socket Server
@@ -45,10 +53,15 @@ public class ServerStartup implements ApplicationListener<ApplicationReadyEvent>
      */
     @Override
     public void onApplicationEvent(ApplicationReadyEvent applicationReadyEvent) {
+        log.info("**********************************************************************");
+        log.info("Start Server Node: " + proxyServerConfig.getName());
+        log.info("Clear Rtmp Socket Server Thread Count");
+        log.info("**********************************************************************");
+        redisService.set("rtmp:server:" + proxyServerConfig.getName(), "0");
         try {
             rtmpSocketServer.startServer(proxyLocalConfig.getPort(), proxyRemoteConfig.getPort(), proxyRemoteConfig.getAddress());
         } catch (IOException e) {
-            e.printStackTrace();
+            log.error("Error Start Rtmp Socket Server", e);
         }
     }
 }

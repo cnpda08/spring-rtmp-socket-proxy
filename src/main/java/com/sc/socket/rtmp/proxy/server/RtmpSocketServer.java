@@ -1,9 +1,14 @@
 package com.sc.socket.rtmp.proxy.server;
 
+import com.sc.socket.rtmp.proxy.config.ProxyServerConfig;
 import com.sc.socket.rtmp.proxy.service.RedisService;
 import com.sc.socket.rtmp.proxy.util.SpringContextUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.annotation.EnableScheduling;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -26,14 +31,25 @@ import java.util.Vector;
  * *************************
  */
 @Component
+@Configuration
+@EnableScheduling
 public class RtmpSocketServer {
 
     private final Logger log = LoggerFactory.getLogger(RtmpSocketServer.class);
 
     private static final int MAX_CONNECTION = 1000;
+
     private static boolean DEBUG_MODE = false;
+
     private static Vector clients = new Vector();
+
     private static String connectType = "UNIX";
+
+    @Autowired
+    private RedisService redisService;
+
+    @Autowired
+    private ProxyServerConfig proxyServerConfig;
 
     public void startServer(int localPort, int remotePort, String remoteHost)
             throws IOException {
@@ -56,11 +72,11 @@ public class RtmpSocketServer {
                         incoming.close();
                     } else {
                         log.info("正在连接重定向【" + remoteHost + ":" + remotePort + "】");
-                        Socket outputing = new Socket(remoteHost, remotePort);
+                        Socket outPuting = new Socket(remoteHost, remotePort);
                         log.info("重定向成功,当前转发模式【" + connectType + "】");
                         if (connectType.equalsIgnoreCase("UNIX")) {
-                            clients.addElement(new SocketMap(outputing, incoming, "SERVER"));
-                            new SocketMap(incoming, outputing, "CLIENT");
+                            clients.addElement(new SocketMap(outPuting, incoming, "SERVER"));
+                            new SocketMap(incoming, outPuting, "CLIENT");
                         }
                     }
                     log.info("**********************************************************************");
@@ -76,6 +92,14 @@ public class RtmpSocketServer {
         } finally {
             server.close();
         }
+    }
+
+    /**
+     * 每5秒刷新一次 通道计数
+     */
+    @Scheduled(cron="0/5 * * * * ? ")
+    private void refCount(){
+        redisService.set("rtmp:server:" + proxyServerConfig.getName(), String.valueOf(clients.size()));
     }
 
     class SocketMap extends Thread {
@@ -107,7 +131,6 @@ public class RtmpSocketServer {
         }
 
         public void run() {
-            RedisService redisService = SpringContextUtil.getBeanByClass(RedisService.class);
             log.debug("**********************************************************************");
             log.debug(serverSymbol + "->【" + clientSymbol + "】开始一个新的线程服务");
             log.debug("**********************************************************************");
@@ -138,6 +161,7 @@ public class RtmpSocketServer {
                     socket.close();
                     if (connectType.equalsIgnoreCase("UNIX") && serverSymbol.equalsIgnoreCase("SERVER")) {
                         clients.remove(this);
+                        refCount();
                     }
                 } catch (IOException e) {
                     log.error("发生错误，关闭连接", e);
